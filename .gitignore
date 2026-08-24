@@ -1,1 +1,14 @@
+# Rust
 /target
+
+# WASM output
+/www/pkg
+
+# IDE
+/.VSCodeCounter
+/.vscode
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

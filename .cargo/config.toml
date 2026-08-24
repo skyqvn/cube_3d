@@ -1,0 +1,4 @@
+[alias]
+win-build = "build --release"
+wasm-build = "build --target wasm32-unknown-unknown --release"
+linux-build = "build --target x86_64-unknown-linux-gnu --release"
