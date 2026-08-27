@@ -194,9 +194,7 @@ impl<'a> ApplicationHandler for App<'a> {
             }
 
             WindowEvent::RedrawRequested => {
-                state.update_uniforms();
-                state.render();
-                window.set_title(&format!("3D Cube - 6 Photos | FPS: {}", state.fps));
+                self.handle_redraw();
             }
             _ => {}
         }
@@ -231,5 +229,32 @@ impl<'a> ApplicationHandler for App<'a> {
         if let Some(window) = &self.window {
             window.request_redraw();
         }
+    }
+}
+
+impl<'a> App<'a> {
+    #[cfg(not(target_arch = "wasm32"))]
+    fn handle_redraw(&mut self) {
+        let window = self.window.as_ref().unwrap();
+        let state = self.state.as_mut().unwrap();
+        state.update_uniforms();
+        if !state.render() {
+            let w = Arc::clone(window);
+            self.state = Some(pollster::block_on(State::new(w)));
+            return;
+        }
+        window.set_title(&format!("3D Cube - 6 Photos | FPS: {}", state.fps));
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn handle_redraw(&mut self) {
+        let window = self.window.as_ref().unwrap();
+        let state = self.state.as_mut().unwrap();
+        state.update_uniforms();
+        if !state.render() {
+            let _ = web_sys::window().unwrap().location().reload();
+            return;
+        }
+        window.set_title(&format!("3D Cube - 6 Photos | FPS: {}", state.fps));
     }
 }

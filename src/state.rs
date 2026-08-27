@@ -65,6 +65,7 @@ pub struct State<'a> {
     pub fps: u32,
     frame_count: u32,
     last_fps_instant: Instant,
+    depth_texture: Option<wgpu::Texture>,
 }
 
 impl<'a> State<'a> {
@@ -334,6 +335,7 @@ impl<'a> State<'a> {
             rotation: glam::Quat::IDENTITY,
             distance: INITIAL_DISTANCE,
             mouse_pressed: false,
+            depth_texture: None,
             fps: 0,
             frame_count: 0,
             last_fps_instant: Instant::now(),
@@ -379,9 +381,9 @@ impl<'a> State<'a> {
             .write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[uniforms]));
     }
 
-    pub fn render(&mut self) {
+    pub fn render(&mut self) -> bool {
         if self.config.width == 0 || self.config.height == 0 {
-            return;
+            return true;
         }
 
         self.frame_count += 1;
@@ -399,27 +401,40 @@ impl<'a> State<'a> {
                 self.surface.configure(&self.device, &self.config);
                 surface_texture
             }
-            _ => return,
+            _ => {
+                self.surface.configure(&self.device, &self.config);
+                return false;
+            }
         };
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let depth_texture = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Depth Texture"),
-            size: wgpu::Extent3d {
-                width: self.config.width,
-                height: self.config.height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Depth32Float,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        });
-        let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let need_new_depth = match &self.depth_texture {
+            None => true,
+            Some(tex) => tex.width() != self.config.width || tex.height() != self.config.height,
+        };
+        if need_new_depth {
+            self.depth_texture = Some(self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("Depth Texture"),
+                size: wgpu::Extent3d {
+                    width: self.config.width,
+                    height: self.config.height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Depth32Float,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            }));
+        }
+        let depth_view = self
+            .depth_texture
+            .as_ref()
+            .unwrap()
+            .create_view(&wgpu::TextureViewDescriptor::default());
 
         let mut encoder = self
             .device
@@ -467,5 +482,6 @@ impl<'a> State<'a> {
 
         self.queue.submit(std::iter::once(encoder.finish()));
         self.queue.present(output);
+        true
     }
 }
