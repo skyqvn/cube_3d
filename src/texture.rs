@@ -2,81 +2,53 @@ pub const FACE_SIZE: u32 = 256;
 pub const ATLAS_COLS: u32 = 3;
 pub const ATLAS_ROWS: u32 = 2;
 const BYTES_PER_PIXEL: u32 = 4;
-const BORDER_WIDTH: u32 = 4;
-const CHAR_SIZE: u32 = 8;
-const FONT_OFFSET: usize = 32;
-const FONT_LAST: usize = 126;
 
-pub const FACE_COLORS: [[u8; 4]; 6] = [
-    [220, 60, 60, 255],  // 前 - 红
-    [60, 180, 60, 255],  // 后 - 绿
-    [60, 60, 220, 255],  // 右 - 蓝
-    [220, 180, 40, 255], // 左 - 黄
-    [200, 60, 200, 255], // 上 - 紫
-    [60, 200, 200, 255], // 下 - 青
-];
+const FACE_0: &[u8] = include_bytes!("../assets/face_0.bmp");
+const FACE_1: &[u8] = include_bytes!("../assets/face_1.bmp");
+const FACE_2: &[u8] = include_bytes!("../assets/face_2.bmp");
+const FACE_3: &[u8] = include_bytes!("../assets/face_3.bmp");
+const FACE_4: &[u8] = include_bytes!("../assets/face_4.bmp");
+const FACE_5: &[u8] = include_bytes!("../assets/face_5.bmp");
 
-pub const FACE_LABELS: [&str; 6] = ["Front", "Back", "Right", "Left", "Top", "Bottom"];
+const FACES: [&[u8]; 6] = [FACE_0, FACE_1, FACE_2, FACE_3, FACE_4, FACE_5];
 
-pub fn create_face_texture(color: [u8; 4], label: &str) -> Vec<u8> {
-    let size = FACE_SIZE;
-    let mut pixels = vec![0u8; (size * size * BYTES_PER_PIXEL) as usize];
+fn parse_bmp_rgba(data: &[u8]) -> (u32, u32, Vec<u8>) {
+    assert!(data.len() >= 54, "BMP file too small");
+    assert_eq!(&data[0..2], b"BM", "Not a BMP file");
 
-    for y in 0..size {
-        for x in 0..size {
-            let idx = ((y * size + x) * BYTES_PER_PIXEL) as usize;
-            if x < BORDER_WIDTH
-                || x >= size - BORDER_WIDTH
-                || y < BORDER_WIDTH
-                || y >= size - BORDER_WIDTH
-            {
-                pixels[idx] = 255;
-                pixels[idx + 1] = 255;
-                pixels[idx + 2] = 255;
-                pixels[idx + 3] = 255;
-            } else {
-                pixels[idx] = color[0];
-                pixels[idx + 1] = color[1];
-                pixels[idx + 2] = color[2];
-                pixels[idx + 3] = color[3];
-            }
+    let dib_size = u32::from_le_bytes([data[14], data[15], data[16], data[17]]);
+    assert_eq!(
+        dib_size, 40,
+        "Unsupported DIB header (only BITMAPINFOHEADER)"
+    );
+
+    let pixel_offset = u32::from_le_bytes([data[10], data[11], data[12], data[13]]) as usize;
+    let width = i32::from_le_bytes([data[18], data[19], data[20], data[21]]) as u32;
+    let height = i32::from_le_bytes([data[22], data[23], data[24], data[25]]) as u32;
+    let bit_count = u16::from_le_bytes([data[28], data[29]]);
+    let compression = u32::from_le_bytes([data[30], data[31], data[32], data[33]]);
+
+    assert_eq!(bit_count, 32, "Only 32-bit BMP supported");
+    assert_eq!(compression, 0, "Only uncompressed BMP (BI_RGB) supported");
+
+    let row_size = ((width * 32 + 31) / 32) * 4;
+    let pixel_data = &data[pixel_offset..];
+
+    let mut rgba = vec![0u8; (width * height * 4) as usize];
+    for y in 0..height {
+        let src_row = (height - 1 - y) * row_size;
+        let dst_row = y * width * 4;
+        for x in 0..width {
+            let src = (src_row + x * 4) as usize;
+            let dst = (dst_row + x * 4) as usize;
+            rgba[dst] = pixel_data[src + 2];
+            rgba[dst + 1] = pixel_data[src + 1];
+            rgba[dst + 2] = pixel_data[src];
+            rgba[dst + 3] = pixel_data[src + 3];
         }
     }
 
-    // 使用 8×8 点阵字体绘制居中文字
-    let font_bytes = include_bytes!("../assets/font_8x8.bin");
-    let font_8x8: &[[u8; 8]; 96] = bytemuck::cast_slice(font_bytes).try_into().unwrap();
-
-    let text_color = [255u8, 255, 255, 255];
-    let start_x = (size - label.len() as u32 * CHAR_SIZE) / 2;
-    let start_y = (size - CHAR_SIZE) / 2;
-
-    for (ci, ch) in label.chars().enumerate() {
-        let idx = ch as usize;
-        if idx < FONT_OFFSET || idx > FONT_LAST {
-            continue;
-        }
-        let bitmap = &font_8x8[idx - FONT_OFFSET];
-        let cx = start_x + ci as u32 * CHAR_SIZE;
-        for row in 0..CHAR_SIZE {
-            let byte = bitmap[row as usize];
-            for col in 0..CHAR_SIZE {
-                if (byte >> (CHAR_SIZE - 1 - col)) & 1 == 1 {
-                    let px = cx + col;
-                    let py = start_y + row;
-                    if px < size && py < size {
-                        let pidx = ((py * size + px) * BYTES_PER_PIXEL) as usize;
-                        pixels[pidx] = text_color[0];
-                        pixels[pidx + 1] = text_color[1];
-                        pixels[pidx + 2] = text_color[2];
-                        pixels[pidx + 3] = text_color[3];
-                    }
-                }
-            }
-        }
-    }
-
-    pixels
+    (width, height, rgba)
 }
 
 pub fn create_texture_atlas() -> (Vec<u8>, u32, u32) {
@@ -84,10 +56,13 @@ pub fn create_texture_atlas() -> (Vec<u8>, u32, u32) {
     let atlas_height = FACE_SIZE * ATLAS_ROWS;
     let mut atlas_pixels = vec![0u8; (atlas_width * atlas_height * BYTES_PER_PIXEL) as usize];
 
-    for (fi, color) in FACE_COLORS.iter().enumerate() {
+    for (fi, face_bmp) in FACES.iter().enumerate() {
+        let (w, h, face_rgba) = parse_bmp_rgba(face_bmp);
+        assert_eq!(w, FACE_SIZE, "face_{}.bmp width must be {}", fi, FACE_SIZE);
+        assert_eq!(h, FACE_SIZE, "face_{}.bmp height must be {}", fi, FACE_SIZE);
+
         let col = (fi % ATLAS_COLS as usize) as u32;
         let row = (fi / ATLAS_COLS as usize) as u32;
-        let face_data = create_face_texture(*color, FACE_LABELS[fi]);
 
         for y in 0..FACE_SIZE {
             for x in 0..FACE_SIZE {
@@ -96,7 +71,7 @@ pub fn create_texture_atlas() -> (Vec<u8>, u32, u32) {
                 let dst_y = row * FACE_SIZE + y;
                 let dst_idx = ((dst_y * atlas_width + dst_x) * BYTES_PER_PIXEL) as usize;
                 atlas_pixels[dst_idx..dst_idx + BYTES_PER_PIXEL as usize]
-                    .copy_from_slice(&face_data[src_idx..src_idx + BYTES_PER_PIXEL as usize]);
+                    .copy_from_slice(&face_rgba[src_idx..src_idx + BYTES_PER_PIXEL as usize]);
             }
         }
     }
