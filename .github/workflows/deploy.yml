@@ -25,8 +25,11 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Install wasm-bindgen
-        run: cargo install wasm-bindgen-cli
+      - name: Install wasm-bindgen-cli (Auto-detect version)
+        run: |
+          WASM_VERSION=$(grep -A 2 'name = "wasm-bindgen"' Cargo.lock | grep 'version' | head -n 1 | cut -d '"' -f 2)
+          echo "Detected wasm-bindgen version: $WASM_VERSION"
+          cargo install -f wasm-bindgen-cli --version "$WASM_VERSION"
 
       - name: Build WASM
         run: cargo build --target wasm32-unknown-unknown --release
