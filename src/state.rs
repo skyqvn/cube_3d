@@ -357,7 +357,10 @@ impl<'a> State<'a> {
         }
         let aspect = self.config.width as f32 / self.config.height as f32;
         let fovy = FOV_DEGREES.to_radians();
-        let proj = glam::Mat4::perspective_rh(fovy, aspect, NEAR_PLANE, FAR_PLANE);
+        let half_h = self.distance * (fovy / 2.0).tan();
+        let half_w = half_h * aspect;
+        let proj =
+            glam::Mat4::orthographic_rh(-half_w, half_w, -half_h, half_h, NEAR_PLANE, FAR_PLANE);
 
         let eye = glam::Vec3::new(0.0, 0.0, self.distance);
         let target = glam::Vec3::ZERO;
